@@ -1,0 +1,30 @@
+{
+  "name": "sap-hana-mcp-license-server",
+  "version": "1.0.0",
+  "description": "License server for SAP HANA MCP Server — issues and validates short alphanumeric license keys bound to a hardware ID.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "db:init": "node scripts/init-db.js",
+    "hwid": "node scripts/get-hwid.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "helmet": "^7.1.0",
+    "pg": "^8.12.0"
+  },
+  "keywords": [
+    "license-server",
+    "sap-hana",
+    "mcp",
+    "sap-business-one"
+  ],
+  "author": "",
+  "license": "UNLICENSED"
+}
