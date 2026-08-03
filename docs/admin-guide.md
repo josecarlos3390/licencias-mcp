@@ -248,7 +248,67 @@ Respuesta:
 
 ---
 
-## 8. Verificar que una licencia funciona
+## 8. Knowledge Base remota
+
+El mismo license server puede servir casos de conocimiento a los clientes MCP. Esto permite que todos los clientes se sincronicen automáticamente cuando agregás o actualizás un caso.
+
+### Subir o actualizar un caso
+
+```bash
+curl -X POST https://licencias-mcp.onrender.com/admin/kb/cases \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: <tu-admin-api-key>" \
+  -d '{
+    "product_code": "hana-b1",
+    "path": "cases/nuevo-diagnostico.md",
+    "title": "Nuevo diagnóstico",
+    "content": "# Nuevo diagnóstico\n\nDescripción del caso...",
+    "version": "1.0"
+  }'
+```
+
+- `path`: ruta relativa del archivo (ej. `cases/xxx.md`).
+- `content`: contenido Markdown completo.
+- Si ya existe un caso con el mismo `product_code` + `path`, se actualiza.
+
+### Listar casos
+
+```bash
+curl -X GET "https://licencias-mcp.onrender.com/admin/kb/cases?product=hana-b1" \
+  -H "X-API-Key: <tu-admin-api-key>"
+```
+
+### Obtener un caso completo
+
+```bash
+curl -X GET https://licencias-mcp.onrender.com/admin/kb/cases/<id> \
+  -H "X-API-Key: <tu-admin-api-key>"
+```
+
+### Eliminar un caso
+
+```bash
+curl -X DELETE https://licencias-mcp.onrender.com/admin/kb/cases/<id> \
+  -H "X-API-Key: <tu-admin-api-key>"
+```
+
+### API público que usa el cliente
+
+El MCP se conecta a estos endpoints para sincronizar:
+
+- `GET /api/kb/list?product=hana-b1` — lista de casos activos con checksum y downloadUrl.
+- `GET /api/kb/download/cases/xxx.md` — contenido Markdown del caso.
+
+Configuración típica en el `.env` del cliente:
+
+```env
+HANA_KB_REMOTE_URL=https://licencias-mcp.onrender.com/api/kb
+HANA_KB_SYNC_INTERVAL_HOURS=24
+```
+
+---
+
+## 9. Verificar que una licencia funciona
 
 Puedes probar la validación sin necesidad del MCP:
 
@@ -279,7 +339,7 @@ Respuesta válida:
 
 ---
 
-## 9. Reactivar una licencia revocada
+## 10. Reactivar una licencia revocada
 
 Si revocaste una licencia por error, puedes reactivarla:
 
@@ -292,7 +352,7 @@ curl -X POST https://licencias-mcp.onrender.com/admin/licenses/BYZX-ZSCJ-WV4D-3F
 
 ---
 
-## 10. Actualizar el servidor
+## 11. Actualizar el servidor
 
 Cuando actualices el código del license server, revisa si hay migraciones pendientes en `scripts/`.
 
@@ -306,7 +366,7 @@ Este script requiere la variable de entorno `DATABASE_URL`.
 
 ---
 
-## 11. Buenas prácticas
+## 12. Buenas prácticas
 
 - **Nunca compartas el `ADMIN_API_KEY`.**
 - Antes de transferir una licencia, confirma con el cliente que ya no usará la máquina antigua.

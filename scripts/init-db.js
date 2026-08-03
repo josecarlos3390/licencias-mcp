@@ -63,6 +63,24 @@ CREATE INDEX IF NOT EXISTS idx_vouchers_product ON vouchers(product_code);
 CREATE INDEX IF NOT EXISTS idx_vouchers_used ON vouchers(used);
 CREATE INDEX IF NOT EXISTS idx_vouchers_expires ON vouchers(expires_at);
 
+CREATE TABLE IF NOT EXISTS kb_cases (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_code VARCHAR(50) NOT NULL REFERENCES products(code),
+  path VARCHAR(255) NOT NULL,
+  title VARCHAR(500) NOT NULL,
+  content TEXT NOT NULL,
+  version VARCHAR(50) DEFAULT '1.0',
+  checksum VARCHAR(64) NOT NULL,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(product_code, path)
+);
+
+CREATE INDEX IF NOT EXISTS idx_kb_cases_product ON kb_cases(product_code);
+CREATE INDEX IF NOT EXISTS idx_kb_cases_path ON kb_cases(path);
+CREATE INDEX IF NOT EXISTS idx_kb_cases_active ON kb_cases(is_active);
+
 CREATE TABLE IF NOT EXISTS telemetry_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   hardware_key VARCHAR(255) NOT NULL,

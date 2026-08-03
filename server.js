@@ -11,6 +11,7 @@ const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
 const crypto = require('crypto');
+const path = require('path');
 const { Pool } = require('pg');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -744,6 +745,190 @@ app.get('/admin/vouchers', requireAdmin, async (req, res) => {
     res.json(result.rows);
   } catch (err) {
     console.error('List vouchers error:', err.message);
+    res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// --- Public API: remote knowledge base ---
+app.get('/api/kb/list', rateLimit, async (req, res) => {
+  try {
+    const requestedProduct = req.query.product || DEFAULT_PRODUCT_CODE;
+
+    const result = await pool.query(
+      `SELECT id, path, title, version, checksum
+       FROM kb_cases
+       WHERE product_code = $1 AND is_active = true
+       ORDER BY path ASC`,
+      [requestedProduct]
+    );
+
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const list = result.rows.map((row) => ({
+      path: row.path,
+      name: row.title,
+      version: row.version,
+      checksum: row.checksum,
+      downloadUrl: `${baseUrl}/api/kb/download/${row.path}`
+    }));
+
+    res.json(list);
+  } catch (err) {
+    console.error('List KB error:', err.message);
+    res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+app.get('/api/kb/download/*', rateLimit, async (req, res) => {
+  try {
+    const filePath = req.params[0];
+    const requestedProduct = req.query.product || DEFAULT_PRODUCT_CODE;
+
+    if (!filePath) {
+      return res.status(400).send('Missing file path');
+    }
+
+    const result = await pool.query(
+      `SELECT content, title
+       FROM kb_cases
+       WHERE product_code = $1 AND path = $2 AND is_active = true
+       LIMIT 1`,
+      [requestedProduct, filePath]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).send('KB case not found');
+    }
+
+    res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+    res.setHeader('Content-Disposition', `inline; filename="${path.basename(filePath)}"`);
+    res.send(result.rows[0].content);
+  } catch (err) {
+    console.error('Download KB error:', err.message);
+    res.status(500).send('Internal error');
+  }
+});
+
+// --- Admin: create or update KB case ---
+app.post('/admin/kb/cases', requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const {
+      product_code = DEFAULT_PRODUCT_CODE,
+      path: casePath,
+      title,
+      content,
+      version = '1.0',
+      is_active = true
+    } = req.body || {};
+
+    if (!casePath || !title || content === undefined) {
+      return res.status(400).json({ error: 'path, title and content are required' });
+    }
+
+    const normalizedPath = String(casePath).trim();
+    const normalizedTitle = String(title).trim();
+    const normalizedContent = String(content);
+    const requestedProduct = String(product_code).trim() || DEFAULT_PRODUCT_CODE;
+    const normalizedVersion = String(version).trim() || '1.0';
+    const checksum = crypto.createHash('sha256').update(normalizedContent).digest('hex');
+
+    await client.query('BEGIN');
+
+    // Ensure product exists
+    await client.query(
+      `INSERT INTO products (code, name, description)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (code) DO NOTHING`,
+      [requestedProduct, requestedProduct, requestedProduct]
+    );
+
+    const result = await client.query(
+      `INSERT INTO kb_cases (product_code, path, title, content, version, checksum, is_active, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+       ON CONFLICT (product_code, path)
+       DO UPDATE SET
+         title = EXCLUDED.title,
+         content = EXCLUDED.content,
+         version = EXCLUDED.version,
+         checksum = EXCLUDED.checksum,
+         is_active = EXCLUDED.is_active,
+         updated_at = NOW()
+       RETURNING *`,
+      [
+        requestedProduct,
+        normalizedPath,
+        normalizedTitle,
+        normalizedContent,
+        normalizedVersion,
+        checksum,
+        is_active === true || is_active === 'true'
+      ]
+    );
+
+    await client.query('COMMIT');
+
+    res.status(201).json({
+      saved: true,
+      case: result.rows[0]
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Save KB case error:', err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// --- Admin: list KB cases ---
+app.get('/admin/kb/cases', requireAdmin, async (req, res) => {
+  try {
+    const requestedProduct = req.query.product || DEFAULT_PRODUCT_CODE;
+    const result = await pool.query(
+      `SELECT id, product_code, path, title, version, checksum, is_active,
+              created_at, updated_at
+       FROM kb_cases
+       WHERE product_code = $1
+       ORDER BY updated_at DESC`,
+      [requestedProduct]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('List admin KB error:', err.message);
+    res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// --- Admin: get single KB case ---
+app.get('/admin/kb/cases/:id', requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM kb_cases WHERE id = $1 LIMIT 1`,
+      [req.params.id]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'KB case not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Get KB case error:', err.message);
+    res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// --- Admin: delete KB case ---
+app.delete('/admin/kb/cases/:id', requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `DELETE FROM kb_cases WHERE id = $1 RETURNING *`,
+      [req.params.id]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'KB case not found' });
+    }
+    res.json({ deleted: true, case: result.rows[0] });
+  } catch (err) {
+    console.error('Delete KB case error:', err.message);
     res.status(500).json({ error: 'Internal error' });
   }
 });
