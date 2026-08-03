@@ -292,7 +292,21 @@ curl -X POST https://licencias-mcp.onrender.com/admin/licenses/BYZX-ZSCJ-WV4D-3F
 
 ---
 
-## 10. Buenas prácticas
+## 10. Actualizar el servidor
+
+Cuando actualices el código del license server, revisa si hay migraciones pendientes en `scripts/`.
+
+Por ejemplo, para agregar la tabla de vouchers a una base existente:
+
+```bash
+node scripts/migrate-add-vouchers.js
+```
+
+Este script requiere la variable de entorno `DATABASE_URL`.
+
+---
+
+## 11. Buenas prácticas
 
 - **Nunca compartas el `ADMIN_API_KEY`.**
 - Antes de transferir una licencia, confirma con el cliente que ya no usará la máquina antigua.
