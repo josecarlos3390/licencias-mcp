@@ -103,10 +103,6 @@ ON CONFLICT (code) DO NOTHING;
 INSERT INTO products (code, name, description)
 VALUES ('sap-btp', 'SAP BTP MCP Server for SAP Business One', 'Agente MCP para operaciones en SAP BTP')
 ON CONFLICT (code) DO NOTHING;
-
-INSERT INTO products (code, name, description)
-VALUES ('sap-cpi', 'SAP CPI MCP Server', 'Agente MCP para administración de SAP Cloud Integration (CPI) vía OData')
-ON CONFLICT (code) DO NOTHING;
 `;
 
 async function init() {

@@ -1,7 +1,6 @@
 # SAP HANA MCP License Server
 
-Backend independiente para emitir y validar licencias de MCP servers SAP.
-Soporta múltiples productos: `hana-b1`, `sap-btp`, `sap-cpi`.
+Backend independiente para emitir y validar licencias del [SAP HANA MCP Server](https://github.com/hatrigt/hana-mcp-server).
 
 ## Qué hace
 
@@ -42,7 +41,7 @@ npm run dev
 | `PORT` | Puerto del servidor | `3000` |
 | `DATABASE_URL` | URL de PostgreSQL | — |
 | `ADMIN_API_KEY` | API key para endpoints de administración | — |
-| `DEFAULT_PRODUCT_CODE` | Código de producto por defecto | `hana-b1` |
+| `DEFAULT_PRODUCT_CODE` | Código de producto | `hana-b1` |
 | `DEFAULT_PLAN` | Plan por defecto | `professional` |
 | `DEFAULT_LICENSE_DAYS` | Días por defecto | `30` |
 | `NODE_ENV` | Entorno | `production` |
