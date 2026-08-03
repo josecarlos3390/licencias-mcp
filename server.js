@@ -287,6 +287,115 @@ app.post('/api/license/transfer', rateLimit, async (req, res) => {
   }
 });
 
+// --- Public API: redeem voucher for a license ---
+app.post('/api/license/redeem', rateLimit, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const {
+      voucher_code,
+      hwid,
+      product_code = DEFAULT_PRODUCT_CODE
+    } = req.body || {};
+
+    if (!voucher_code || !hwid) {
+      return res.status(400).json({ error: 'voucher_code and hwid are required' });
+    }
+
+    const normalizedVoucher = String(voucher_code).trim().toUpperCase();
+    const normalizedHwid = String(hwid).trim();
+    const requestedProduct = String(product_code).trim() || DEFAULT_PRODUCT_CODE;
+
+    await client.query('BEGIN');
+
+    // Find valid, unused voucher
+    const voucherResult = await client.query(
+      `SELECT id, code, plan, days
+       FROM vouchers
+       WHERE code = $1
+         AND product_code = $2
+         AND is_active = true
+         AND used = false
+         AND expires_at > NOW()
+       LIMIT 1`,
+      [normalizedVoucher, requestedProduct]
+    );
+
+    if (voucherResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Invalid, expired or already used voucher' });
+    }
+
+    const voucher = voucherResult.rows[0];
+
+    // Check that this machine does not already have an active license
+    const existingResult = await client.query(
+      `SELECT license_key
+       FROM licenses
+       WHERE hwid = $1
+         AND product_code = $2
+         AND is_active = true
+         AND revoked = false
+         AND expires_at > NOW()
+       LIMIT 1`,
+      [normalizedHwid, requestedProduct]
+    );
+
+    if (existingResult.rowCount > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'This machine already has an active license',
+        license_key: existingResult.rows[0].license_key
+      });
+    }
+
+    // Mark voucher as used
+    await client.query(
+      `UPDATE vouchers
+       SET used = true, used_by_hwid = $1, used_at = NOW(), updated_at = NOW()
+       WHERE id = $2`,
+      [normalizedHwid, voucher.id]
+    );
+
+    // Create license
+    const licenseKey = await generateUniqueLicenseKey(client);
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + voucher.days);
+
+    const licenseResult = await client.query(
+      `INSERT INTO licenses (license_key, hwid, product_code, plan, days, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [
+        licenseKey,
+        normalizedHwid,
+        requestedProduct,
+        voucher.plan,
+        voucher.days,
+        expiresAt.toISOString()
+      ]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      redeemed: true,
+      license_key: licenseKey,
+      hwid: normalizedHwid,
+      product_code: requestedProduct,
+      plan: voucher.plan,
+      days: voucher.days,
+      expires_at: expiresAt.toISOString(),
+      license: licenseResult.rows[0]
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Redeem voucher error:', err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 // --- Public API: heartbeat / telemetry ---
 app.post('/api/telemetry/heartbeat', rateLimit, async (req, res) => {
   try {
@@ -552,6 +661,90 @@ app.post('/admin/licenses/transfer', requireAdmin, async (req, res) => {
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
+  }
+});
+
+// --- Admin: create vouchers ---
+app.post('/admin/vouchers', requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const {
+      days = DEFAULT_LICENSE_DAYS,
+      count = 1,
+      product_code = DEFAULT_PRODUCT_CODE,
+      plan = DEFAULT_PLAN,
+      expires_in_days = 30,
+      metadata
+    } = req.body || {};
+
+    const requestedProduct = String(product_code).trim() || DEFAULT_PRODUCT_CODE;
+    const requestedPlan = String(plan).trim() || DEFAULT_PLAN;
+    const voucherDays = parseInt(days, 10) || DEFAULT_LICENSE_DAYS;
+    const voucherCount = Math.min(Math.max(parseInt(count, 10) || 1, 1), 100);
+    const voucherExpirationDays = parseInt(expires_in_days, 10) || 30;
+
+    await client.query('BEGIN');
+
+    // Ensure product exists
+    await client.query(
+      `INSERT INTO products (code, name, description)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (code) DO NOTHING`,
+      [requestedProduct, requestedProduct, requestedProduct]
+    );
+
+    const voucherExpiresAt = new Date();
+    voucherExpiresAt.setDate(voucherExpiresAt.getDate() + voucherExpirationDays);
+
+    const created = [];
+    for (let i = 0; i < voucherCount; i++) {
+      const code = await generateUniqueLicenseKey(client);
+      const result = await client.query(
+        `INSERT INTO vouchers (code, product_code, plan, days, expires_at, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *`,
+        [
+          code,
+          requestedProduct,
+          requestedPlan,
+          voucherDays,
+          voucherExpiresAt.toISOString(),
+          metadata ? JSON.stringify(metadata) : null
+        ]
+      );
+      created.push(result.rows[0]);
+    }
+
+    await client.query('COMMIT');
+
+    res.status(201).json({
+      vouchers: created,
+      codes: created.map((v) => v.code),
+      count: created.length,
+      expires_at: voucherExpiresAt.toISOString()
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Create vouchers error:', err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// --- Admin: list vouchers ---
+app.get('/admin/vouchers', requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, code, product_code, plan, days, is_active, used, used_by_hwid,
+              used_at, expires_at, created_at
+       FROM vouchers
+       ORDER BY created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('List vouchers error:', err.message);
+    res.status(500).json({ error: 'Internal error' });
   }
 });
 

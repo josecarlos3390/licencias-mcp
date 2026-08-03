@@ -42,6 +42,27 @@ CREATE INDEX IF NOT EXISTS idx_licenses_key ON licenses(license_key);
 CREATE INDEX IF NOT EXISTS idx_licenses_hwid ON licenses(hwid);
 CREATE INDEX IF NOT EXISTS idx_licenses_expires ON licenses(expires_at);
 
+CREATE TABLE IF NOT EXISTS vouchers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code VARCHAR(20) UNIQUE NOT NULL,
+  product_code VARCHAR(50) NOT NULL REFERENCES products(code),
+  plan VARCHAR(50) NOT NULL DEFAULT 'professional',
+  days INTEGER NOT NULL DEFAULT 30,
+  is_active BOOLEAN DEFAULT true,
+  used BOOLEAN DEFAULT false,
+  used_by_hwid VARCHAR(255),
+  used_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  metadata JSONB
+);
+
+CREATE INDEX IF NOT EXISTS idx_vouchers_code ON vouchers(code);
+CREATE INDEX IF NOT EXISTS idx_vouchers_product ON vouchers(product_code);
+CREATE INDEX IF NOT EXISTS idx_vouchers_used ON vouchers(used);
+CREATE INDEX IF NOT EXISTS idx_vouchers_expires ON vouchers(expires_at);
+
 CREATE TABLE IF NOT EXISTS telemetry_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   hardware_key VARCHAR(255) NOT NULL,

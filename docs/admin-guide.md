@@ -1,6 +1,6 @@
 # Guía de administración — SAP HANA MCP License Server
 
-Esta guía explica cómo administrar licencias del backend: autenticación, listado, revocación y transferencia de licencias entre máquinas.
+Esta guía explica cómo administrar licencias del backend: autenticación, listado, revocación, transferencia y vouchers de activación.
 
 ---
 
@@ -170,7 +170,85 @@ Respuesta:
 
 ---
 
-## 6. Verificar que una licencia funciona
+## 6. Vouchers de activación
+
+Los vouchers permiten que el cliente se active solo sin que tú conozcas su Hardware ID de antemano. Generás un código de un solo uso, se lo envías al cliente y él lo canjea desde el menú de licencias de su máquina.
+
+### Crear vouchers
+
+```bash
+curl -X POST https://licencias-mcp.onrender.com/admin/vouchers \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: <tu-admin-api-key>" \
+  -d '{
+    "days": 30,
+    "count": 5,
+    "product_code": "hana-b1",
+    "plan": "professional",
+    "expires_in_days": 30
+  }'
+```
+
+Respuesta:
+
+```json
+{
+  "vouchers": [ ... ],
+  "codes": ["ABCD-EFGH-IJKL-MNOP", "WXYZ-1234-ABCD-5678"],
+  "count": 2,
+  "expires_at": "2026-09-02T12:00:00.000Z"
+}
+```
+
+- `days`: días de vigencia de la licencia que se generará al canjear.
+- `count`: cantidad de vouchers a generar (máximo 100).
+- `expires_in_days`: plazo para canjear el voucher (default 30 días).
+
+### Listar vouchers
+
+```bash
+curl -X GET https://licencias-mcp.onrender.com/admin/vouchers \
+  -H "X-API-Key: <tu-admin-api-key>"
+```
+
+### Canjear un voucher (flujo del cliente)
+
+El cliente envía su voucher y HWID al endpoint público:
+
+```bash
+curl -X POST https://licencias-mcp.onrender.com/api/license/redeem \
+  -H "Content-Type: application/json" \
+  -d '{
+    "voucher_code": "ABCD-EFGH-IJKL-MNOP",
+    "hwid": "hardware-id-del-cliente",
+    "product_code": "hana-b1"
+  }'
+```
+
+Respuesta:
+
+```json
+{
+  "redeemed": true,
+  "license_key": "WXYZ-1234-ABCD-5678",
+  "hwid": "hardware-id-del-cliente",
+  "product_code": "hana-b1",
+  "plan": "professional",
+  "days": 30,
+  "expires_at": "2026-09-02T12:00:00.000Z"
+}
+```
+
+### Reglas de los vouchers
+
+- Un voucher se canjea **una sola vez**.
+- Queda atado al HWID que lo canjea.
+- Si el HWID ya tiene una licencia activa, el canje falla con `409`.
+- Si el voucher venció o ya fue usado, el canje falla con `400`.
+
+---
+
+## 8. Verificar que una licencia funciona
 
 Puedes probar la validación sin necesidad del MCP:
 
@@ -201,7 +279,7 @@ Respuesta válida:
 
 ---
 
-## 7. Reactivar una licencia revocada
+## 9. Reactivar una licencia revocada
 
 Si revocaste una licencia por error, puedes reactivarla:
 
@@ -214,7 +292,7 @@ curl -X POST https://licencias-mcp.onrender.com/admin/licenses/BYZX-ZSCJ-WV4D-3F
 
 ---
 
-## 8. Buenas prácticas
+## 10. Buenas prácticas
 
 - **Nunca compartas el `ADMIN_API_KEY`.**
 - Antes de transferir una licencia, confirma con el cliente que ya no usará la máquina antigua.
