@@ -333,6 +333,114 @@ app.post('/admin/licenses/:license_key/activate', requireAdmin, async (req, res)
   }
 });
 
+// --- Admin: transfer license to a new machine ---
+app.post('/admin/licenses/transfer', requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const {
+      old_hwid,
+      new_hwid,
+      product_code = DEFAULT_PRODUCT_CODE
+    } = req.body || {};
+
+    if (!old_hwid || !new_hwid) {
+      return res.status(400).json({ error: 'old_hwid and new_hwid are required' });
+    }
+
+    const normalizedOld = String(old_hwid).trim();
+    const normalizedNew = String(new_hwid).trim();
+    const requestedProduct = String(product_code).trim() || DEFAULT_PRODUCT_CODE;
+
+    await client.query('BEGIN');
+
+    // Find active license for old machine
+    const oldResult = await client.query(
+      `SELECT id, license_key, plan, days, expires_at, metadata
+       FROM licenses
+       WHERE hwid = $1
+         AND product_code = $2
+         AND is_active = true
+         AND revoked = false
+         AND expires_at > NOW()
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [normalizedOld, requestedProduct]
+    );
+
+    if (oldResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'No active license found for the old hardware ID' });
+    }
+
+    const oldLicense = oldResult.rows[0];
+
+    // Calculate remaining days
+    const now = new Date();
+    const expiresAt = new Date(oldLicense.expires_at);
+    const remainingMs = expiresAt.getTime() - now.getTime();
+    const remainingDays = Math.max(0, Math.ceil(remainingMs / (1000 * 60 * 60 * 24)));
+
+    if (remainingDays === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Old license has expired' });
+    }
+
+    // Revoke old license
+    await client.query(
+      `UPDATE licenses SET revoked = true, is_active = false, updated_at = NOW()
+       WHERE id = $1`,
+      [oldLicense.id]
+    );
+
+    // Ensure product exists
+    await client.query(
+      `INSERT INTO products (code, name, description)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (code) DO NOTHING`,
+      [requestedProduct, requestedProduct, requestedProduct]
+    );
+
+    // Generate new license key
+    const newLicenseKey = await generateUniqueLicenseKey(client);
+    const newExpiresAt = new Date();
+    newExpiresAt.setDate(newExpiresAt.getDate() + remainingDays);
+
+    const newResult = await client.query(
+      `INSERT INTO licenses (license_key, hwid, product_code, plan, days, expires_at, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [
+        newLicenseKey,
+        normalizedNew,
+        requestedProduct,
+        oldLicense.plan,
+        remainingDays,
+        newExpiresAt.toISOString(),
+        oldLicense.metadata
+      ]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      transferred: true,
+      old_license_key: oldLicense.license_key,
+      old_hwid: normalizedOld,
+      new_license: newResult.rows[0],
+      new_license_key: newLicenseKey,
+      new_hwid: normalizedNew,
+      remaining_days: remainingDays,
+      expires_at: newExpiresAt.toISOString()
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Transfer license error:', err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 // --- Error handler ---
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err.message);

@@ -139,3 +139,7 @@ curl -X POST https://tu-app.railway.app/admin/licenses \
   -H "X-API-Key: $ADMIN_API_KEY" \
   -d "{\"hwid\":\"$HWID\",\"days\":30}"
 ```
+
+## Administración de licencias
+
+Para operaciones de administrador (listar, revocar, transferir licencias entre máquinas, etc.), consulta la [guía de administración](docs/admin-guide.md).
