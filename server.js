@@ -106,6 +106,11 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'sap-hana-mcp-license-server', version: '1.0.0' });
 });
 
+// --- Lightweight ping for uptime monitors (e.g. UptimeRobot) ---
+app.get('/ping', (req, res) => {
+  res.status(200).send('pong');
+});
+
 // --- Public API: license validation ---
 app.post('/api/license/validate', rateLimit, async (req, res) => {
   try {

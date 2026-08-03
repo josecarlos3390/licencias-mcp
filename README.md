@@ -112,6 +112,24 @@ Reactiva una licencia revocada.
 3. Configura las variables de entorno (`DATABASE_URL`, `ADMIN_API_KEY`, etc.).
 4. Railway detectará el `package.json` y ejecutará `npm start`.
 
+## Deploy a Render (free tier)
+
+1. En Render, crea un **New Web Service** y conecta este repositorio.
+2. Configura:
+   - **Build Command:** `npm install`
+   - **Start Command:** `npm start`
+   - **Environment:** agrega `DATABASE_URL`, `ADMIN_API_KEY`, `DEFAULT_PRODUCT_CODE`, etc.
+3. Render te dará una URL como `https://licencias-mcp.onrender.com`.
+
+### Mantener el servicio despierto en Render
+
+El tier gratuito de Render duerme el servicio tras 15 minutos de inactividad. Para evitarlo, configura un monitor de uptime que haga ping cada 10-14 minutos:
+
+- Endpoint ligero: `GET /ping` → responde `pong`.
+- También puedes usar `GET /health` si prefieres JSON.
+
+**UptimeRobot:** crea un monitor tipo `HTTP(s)` apuntando a `https://tu-app.onrender.com/ping` con intervalo de 14 minutos.
+
 ## Generar una licencia (ejemplo con curl)
 
 ```bash
