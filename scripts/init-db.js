@@ -56,9 +56,13 @@ CREATE INDEX IF NOT EXISTS idx_telemetry_hardware_key ON telemetry_events(hardwa
 CREATE INDEX IF NOT EXISTS idx_telemetry_event_type ON telemetry_events(event_type);
 CREATE INDEX IF NOT EXISTS idx_telemetry_created_at ON telemetry_events(created_at);
 
--- Seed default product
+-- Seed default products
 INSERT INTO products (code, name, description)
 VALUES ('hana-b1', 'HANA MCP Server for SAP Business One', 'Agente MCP para diagnóstico de SAP HANA y SAP Business One Service Layer')
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO products (code, name, description)
+VALUES ('sap-btp', 'SAP BTP MCP Server for SAP Business One', 'Agente MCP para operaciones en SAP BTP')
 ON CONFLICT (code) DO NOTHING;
 `;
 
