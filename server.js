@@ -139,11 +139,11 @@ app.post('/api/license/validate', rateLimit, async (req, res) => {
 
     const license = result.rows[0];
 
-    if (!license.is_active) {
-      return res.status(401).json({ active: false, message: 'License disabled' });
-    }
     if (license.revoked) {
       return res.status(401).json({ active: false, message: 'License revoked' });
+    }
+    if (!license.is_active) {
+      return res.status(401).json({ active: false, message: 'License disabled' });
     }
     if (license.hwid !== normalizedHwid) {
       return res.status(401).json({ active: false, message: 'Hardware ID mismatch' });
